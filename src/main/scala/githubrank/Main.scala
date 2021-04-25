@@ -17,7 +17,7 @@ object Main extends App {
 
   val config = ConfigFactory.parseFile(new File("src/main/resources/application.conf")).resolve()
   val actor = RankActor(config.getString("apiKey"))
-  implicit val system: ActorSystem[RankMessagesTyped] = ActorSystem(actor, "Github-Rank-Actor")
+  implicit val system: ActorSystem[RankMessages] = ActorSystem(actor, "Github-Rank-Actor")
   implicit val ex = system.executionContext
   implicit val askTimout: Timeout = Timeout(config.getDuration("github-ranks.routes.ask-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS)
   implicit val requestTimeout = config.getDuration("request_timout", TimeUnit.SECONDS)

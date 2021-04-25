@@ -12,11 +12,11 @@ import scala.concurrent.Future
 import scala.util.Try
 
 
-sealed trait RankMessagesTyped {
+sealed trait RankMessages {
   def replyTo: ActorRef[Either[Error, Seq[Contributor]]]
 }
 
-case class GetContributionsTyped(org: String, replyTo: ActorRef[Either[Error, Seq[GithubEntity]]]) extends RankMessagesTyped
+case class GetContributions(org: String, replyTo: ActorRef[Either[Error, Seq[GithubEntity]]]) extends RankMessages
 
 object RankActor {
 
@@ -25,14 +25,14 @@ object RankActor {
   val orgUri: (String, Int) => Uri = (org: String, perPage: Int) => Uri(s"https://api.github.com/users/${org}/repos?per_page=$perPage")
   val reposUri: (String, String, Int) => Uri = (org: String, repo: String, perPage: Int) => Uri(s"https://api.github.com/repos/${org}/${repo}/contributors?per_page=$perPage")
 
-  def apply(apiKey: String): Behavior[RankMessagesTyped] = Behaviors.receive { (context, message) =>
+  def apply(apiKey: String): Behavior[RankMessages] = Behaviors.receive { (context, message) =>
 
-    implicit val system = context.system.asInstanceOf[ActorSystem[RankMessagesTyped]]
+    implicit val system = context.system.asInstanceOf[ActorSystem[RankMessages]]
     import system.executionContext
     val requestClient = new HttpRequestClient(converter, apiKey, system.log)
     val perPage = 100
     message match {
-      case GetContributionsTyped(org, replyTo) =>
+      case GetContributions(org, replyTo) =>
         requestClient.makeRequest(Some(orgUri(org, perPage)))
           .mapAsyncUnordered(3) {
             case Right(repos) =>
@@ -53,7 +53,7 @@ object RankActor {
       .fold(fa => Future.successful(Seq.empty), fb => fb)
   }
 
-  def fetchRepoContributors(repos: List[GithubEntity], org: String, requestClient: HttpRequestClient)(implicit system: ActorSystem[RankMessagesTyped]): Future[Seq[Contributor]] = {
+  def fetchRepoContributors(repos: List[GithubEntity], org: String, requestClient: HttpRequestClient)(implicit system: ActorSystem[RankMessages]): Future[Seq[Contributor]] = {
     import system.executionContext
     system.log.info(s"fetching contributors for repos: $repos")
     val r = Source(repos)

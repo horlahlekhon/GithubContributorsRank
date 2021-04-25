@@ -24,7 +24,7 @@ class GithubRankSpec extends AsyncWordSpecLike with Matchers with BeforeAndAfter
     "Send back a valid and sorted list of contributors given a valid org in message 'GetContributions'" in {
       val probe = testKit.createTestProbe[Either[Error, Seq[GithubEntity]]]()
       val rankActor = testKit.spawn(RankActor(apiKey))
-      val contribsFuture = rankActor ! GetContributionsTyped("aransiolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
+      val contribsFuture = rankActor ! GetContributions("aransiolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
       val message = probe.expectMessageType[Either[Error, Seq[Contributor]]](Duration(50L, TimeUnit.SECONDS))
       message match {
         case Right(value) =>
@@ -36,7 +36,7 @@ class GithubRankSpec extends AsyncWordSpecLike with Matchers with BeforeAndAfter
     "Send back an Error given an invalid org in message 'GetContributions'" in {
       val probe = testKit.createTestProbe[Either[Error, Seq[GithubEntity]]]()
       val rankActor = testKit.spawn(RankActor(apiKey))
-      val contribsFuture = rankActor ! GetContributionsTyped("aransolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
+      val contribsFuture = rankActor ! GetContributions("aransolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
       val message = probe.expectMessageType[Either[Error, Seq[Contributor]]](Duration(50L, TimeUnit.SECONDS))
       message.isLeft shouldEqual true
     }

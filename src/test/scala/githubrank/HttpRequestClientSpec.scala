@@ -22,7 +22,7 @@ class HttpRequestClientSpec extends AsyncWordSpecLike with Matchers with BeforeA
   import GithubEntityJsonFormats._
 
   val behaviour = RankActor(apiKey)
-  implicit val sys: ActorSystem[RankMessagesTyped] = ActorSystem(Behaviors.empty, "Github-Rank-Actor")
+  implicit val sys: ActorSystem[RankMessages] = ActorSystem(Behaviors.empty, "Github-Rank-Actor")
   implicit val ex = sys.executionContext
   implicit val timeout: Timeout = Timeout.create(testConf.getDuration("github-ranks.routes.ask-timeout"))
   val classicSys = sys.classicSystem

@@ -22,7 +22,7 @@ class HttpRequestClient(entityMapper: HttpResponse => Future[Seq[GithubEntity]],
 
   /*
   * This is a materailized version of makeRequest() in case we dont want to handle the source materialization.*/
-  def makeRequestWithResponse(request: Option[Uri])(implicit materializer: Materializer, system: ActorSystem[RankMessagesTyped]): Future[immutable.Seq[Either[Error, Seq[GithubEntity]]]] = {
+  def makeRequestWithResponse(request: Option[Uri])(implicit materializer: Materializer, system: ActorSystem[RankMessages]): Future[immutable.Seq[Either[Error, Seq[GithubEntity]]]] = {
     implicit val ec = system.executionContext
     makeRequest(request)
       .runWith(Sink.seq[Either[Error, Seq[GithubEntity]]])
@@ -31,7 +31,7 @@ class HttpRequestClient(entityMapper: HttpResponse => Future[Seq[GithubEntity]],
   /*
   * Returns a Source that emits Option[Seq[GithubEntity]] and can be materialized somewhere..
   * @param: request: he request to be made */
-  def makeRequest(uri: Option[Uri])(implicit materializer: Materializer, system: ActorSystem[RankMessagesTyped]): Source[Either[Error, Seq[GithubEntity]], NotUsed] = {
+  def makeRequest(uri: Option[Uri])(implicit materializer: Materializer, system: ActorSystem[RankMessages]): Source[Either[Error, Seq[GithubEntity]], NotUsed] = {
     Source.unfoldAsync(uri)(paginationChain)
   }
 
@@ -39,7 +39,7 @@ class HttpRequestClient(entityMapper: HttpResponse => Future[Seq[GithubEntity]],
   * Recursively make requests to a paginated page, given that the pagination
   * details exists in the Link header returned from reach request
   * @param request: An Option of request to be made.*/
-  def paginationChain(uri: Option[Uri])(implicit mat: Materializer, system: ActorSystem[RankMessagesTyped])
+  def paginationChain(uri: Option[Uri])(implicit mat: Materializer, system: ActorSystem[RankMessages])
   : Future[Option[(Option[Uri], Either[Error, Seq[GithubEntity]])]] = {
     implicit val ec: ExecutionContext = system.executionContext
     uri match {

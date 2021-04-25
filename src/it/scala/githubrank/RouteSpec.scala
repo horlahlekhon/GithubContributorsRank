@@ -19,7 +19,7 @@ class RouteSpec extends AsyncWordSpec with Matchers with ScalatestRouteTest with
   implicit val requestTimeout = 50L
   val apiKey = ConfigFactory.parseFile(new File("src/it/resources/application.conf")).resolve().getString("apiKey")
   val behaviour = RankActor(apiKey)
-  implicit val sys: ActorSystem[RankMessagesTyped] = ActorSystem(behaviour, "Github-Rank-Actor")
+  implicit val sys: ActorSystem[RankMessages] = ActorSystem(behaviour, "Github-Rank-Actor")
   implicit val ex = sys.executionContext
   val router = new Router
   val org = "aransiolaii"

@@ -13,7 +13,7 @@ import spray.json._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-class Router(implicit timeout: Long, askTimeoutException: Timeout, system: ActorSystem[RankMessagesTyped]) {
+class Router(implicit timeout: Long, askTimeoutException: Timeout, system: ActorSystem[RankMessages]) {
 
   import GithubEntityJsonFormats._
 
@@ -61,5 +61,5 @@ class Router(implicit timeout: Long, askTimeoutException: Timeout, system: Actor
   private val caching = routeCache[Uri]
 
   private def getContributions(org: String): Future[Either[Error, Seq[Contributor]]] =
-    system.ask(ref => GetContributionsTyped(org, ref)).mapTo[Either[Error, Seq[Contributor]]]
+    system.ask(ref => GetContributions(org, ref)).mapTo[Either[Error, Seq[Contributor]]]
 }
