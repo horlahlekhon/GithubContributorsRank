@@ -1,88 +1,71 @@
 package githubrank
 
-import akka.actor.Actor
-import akka.http.scaladsl.model.{HttpRequest, HttpResponse, headers}
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.model.{HttpHeader, HttpRequest, HttpResponse, Uri, headers}
 import akka.http.scaladsl.unmarshalling.Unmarshal
+import akka.stream.Materializer
 import akka.stream.scaladsl.{Sink, Source}
-import akka.stream.{ActorMaterializer, Materializer}
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.util.Try
 
-trait RankMessages
 
-case class GetContributions(org: String) extends RankMessages
+sealed trait RankMessagesTyped {
+  def replyTo: ActorRef[Either[Error, Seq[Contributor]]]
+}
 
-case class ResponseEntities[A](responses: List[A])
+case class GetContributionsTyped(org: String, replyTo: ActorRef[Either[Error, Seq[GithubEntity]]]) extends RankMessagesTyped
 
-case class GetContributors(repoName: String)
-
-
-class RankActor extends Actor {
-  implicit val system = context.system
-  implicit val ec: ExecutionContext = system.dispatcher
-  implicit val materializer = ActorMaterializer()
+object RankActor {
 
   import GithubEntityJsonFormats._
 
-  val header = scala.collection.immutable.Seq(
-    headers.RawHeader("Authorization", "token 2a0098a7b1ae76fc76bb5c507f54e15ee7fdd71a"),
-  )
-  val requestClient = new HttpRequestClient(converter)
+  val orgUri: (String, Int) => Uri = (org: String, perPage: Int) => Uri(s"https://api.github.com/users/${org}/repos?per_page=$perPage")
+  val reposUri: (String, String, Int) => Uri = (org: String, repo: String, perPage: Int) => Uri(s"https://api.github.com/repos/${org}/${repo}/contributors?per_page=$perPage")
+
+  def apply(apiKey: String): Behavior[RankMessagesTyped] = Behaviors.receive { (context, message) =>
+
+    implicit val system = context.system.asInstanceOf[ActorSystem[RankMessagesTyped]]
+    import system.executionContext
+    val requestClient = new HttpRequestClient(converter, apiKey, system.log)
+    val perPage = 100
+    message match {
+      case GetContributionsTyped(org, replyTo) =>
+        requestClient.makeRequest(Some(orgUri(org, perPage)))
+          .mapAsyncUnordered(3) {
+            case Right(repos) =>
+              system.log.info(s"organisation found: ${org}.. repos found: ${repos.length}")
+              val fut = fetchRepoContributors(repos.toList, org, requestClient)
+              fut.map(Right(_))
+            case left@Left(_) =>
+              system.log.error(s"Couldn't fetch the organisation. reason: ${left}")
+              Future(left)
+          }.map(e => e)
+          .runForeach(e => replyTo ! e )
+        Behaviors.same
+    }
+  }
 
   def converter(httpResponse: HttpResponse)(implicit mat: Materializer): Future[Seq[GithubEntity]] = {
     Try(Unmarshal(httpResponse).to[Seq[GithubEntity]])
       .fold(fa => Future.successful(Seq.empty), fb => fb)
   }
 
-  def fetchRepoContributorss(repos: List[GithubEntity], org: String): Future[List[Contributor]] = {
-    val requests = repos.map {
-      case Repo(name) =>
-        val req = HttpRequest(uri = s"https://api.github.com/repos/${org}/$name/contributors?per_page=100", headers = header)
-        requestClient.makeRequestWithResponse(Some(req))
-    }
-    Future
-      .sequence(requests)
-      .map(e =>
-        e.flatten.map(_.right.get)
-          .map(_.asInstanceOf[Contributor]))
-      .map(contributors => contributors.sortBy(_.contributions)(Ordering[Int].reverse))
-  }
-
-  override def receive: Receive = {
-    case GetContributions(org) =>
-      val replyTo = sender()
-      val requ = HttpRequest(uri = s"https://api.github.com/users/${org}/repos?per_page=100", headers = header)
-     requestClient.makeRequest(Some(requ))
-        .mapAsyncUnordered(3) {
-          case Left(error) =>
-            Future(Left(error))
-          case Right(repos) =>
-           val fut =  fetchRepoContributors(repos.toList, org)
-              fut.map(Right(_))
-        }.runWith(Sink.foreach[Either[Error, Seq[Contributor]]] { value =>
-       replyTo ! value
-     })
-  }
-
-  /*
-  * Fetch contributors for each repository and make sure to drill down each repo that might have more than one page..
-  * In some cases where repository contributor size is large, like some google repository, github doesnt return complete data
-  * and return with message
-  * {"message":"The history or contributor list is too large to list contributors for
-  *  this repository via the API.","documentation_url":"https://docs.github.com/rest/reference/repos#list-repository-contributors"
-  * @param repos: List of repositories to get contributors for
-  * */
-  def fetchRepoContributors(repos: List[GithubEntity], org: String): Future[Seq[Contributor]] = {
-    Source(repos)
+  def fetchRepoContributors(repos: List[GithubEntity], org: String, requestClient: HttpRequestClient)(implicit system: ActorSystem[RankMessagesTyped]): Future[Seq[Contributor]] = {
+    import system.executionContext
+    system.log.info(s"fetching contributors for repos: $repos")
+    val r = Source(repos)
       .mapAsyncUnordered(3) { repo =>
-        val request = HttpRequest(uri = s"https://api.github.com/repos/${org}/${repo.asInstanceOf[Repo].name}/contributors?per_page=100", headers = header)
-        requestClient.makeRequest(Some(request)).map(_.right.get)
-          .runWith(Sink.reduce[Seq[GithubEntity]](_ ++ _))
-      }.runWith(Sink.reduce[Seq[GithubEntity]](_ ++ _)).map { e =>
-      system.log.info(s"Contributors size with duplicates: ${e.length}")
-      val res = e.
-        map(_.asInstanceOf[Contributor])
+        val request = reposUri(org, repo.asInstanceOf[Repo].name, 100)
+        requestClient.makeRequest(Some(request))
+          .runWith(Sink.seq[Either[Error, Seq[GithubEntity]]])
+      }.runReduce[Seq[Either[Error, Seq[GithubEntity]]]](_ ++ _).map { e =>
+      val contribs = e.collect { case Right(value) => value }.flatten
+      system.log.info(s"Contributors size with duplicates: ${contribs.size}")
+
+      val res = contribs.map(_.asInstanceOf[Contributor])
         .groupBy(_.login).map {
         case (str, contributors) => Contributor(str, contributors.map(_.contributions).sum)
       }.toList
@@ -90,7 +73,6 @@ class RankActor extends Actor {
       system.log.info(s"fetched contributors after merging duplicates: ${res.length}")
       res
     }
+    r
   }
 }
-
-

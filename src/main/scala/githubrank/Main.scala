@@ -1,28 +1,32 @@
 package githubrank
 
-import akka.actor.{ActorSystem, Props}
+//import akka.actor.ActorSystem
+
+import java.io.File
+import java.util.concurrent.TimeUnit
+
+import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.client.RequestBuilding.Get
-import akka.stream.ActorMaterializer
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 object Main extends App {
 
-  implicit val system = ActorSystem("github-rank")
-  implicit val materializer =  ActorMaterializer()
-  implicit val ctx: ExecutionContext = system.dispatcher
-  implicit val timeout = Timeout.create(system.settings.config.getDuration("github-ranks.routes.ask-timeout"))
-
-
+  val config = ConfigFactory.parseFile(new File("src/main/resources/application.conf")).resolve()
+  val actor = RankActor(config.getString("apiKey"))
+  implicit val system: ActorSystem[RankMessagesTyped] = ActorSystem(actor, "Github-Rank-Actor")
+  implicit val ex = system.executionContext
+  implicit val askTimout: Timeout = Timeout(config.getDuration("github-ranks.routes.ask-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS)
+  implicit val requestTimeout = config.getDuration("request_timout", TimeUnit.SECONDS)
   val routes = new Router
 
   system.log.info("Akka http server started at localhost:8080")
   val (host, port) = ("localhost", 8080)
   val bind: Future[ServerBinding] = Http().newServerAt(host, port).bindFlow(routes.route)
 
-  bind.failed.foreach(exception => system.log.error(exception, s" Failed to create server at $host:$port"))
+  bind.failed.foreach(exception => system.log.error(s" Failed to create server at $host:$port", exception))
 
 }

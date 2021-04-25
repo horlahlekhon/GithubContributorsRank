@@ -1,27 +1,31 @@
 package githubrank
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.typed.scaladsl.AskPattern.Askable
+import akka.actor.typed.{ActorSystem, Scheduler}
 import akka.http.scaladsl.model.HttpMethods.GET
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.directives.CachingDirectives.{cache, routeCache}
 import akka.http.scaladsl.server.{RequestContext, Route}
-import akka.pattern.ask
 import akka.util.Timeout
 import spray.json._
-import spray.json.DefaultJsonProtocol
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-class Router(implicit val system: ActorSystem, timeout: Timeout) {
-import GithubEntityJsonFormats._
-import system.dispatcher
+class Router(implicit timeout: Long, askTimeoutException: Timeout, system: ActorSystem[RankMessagesTyped]) {
 
+  import GithubEntityJsonFormats._
+
+  implicit val sys = system.classicSystem
+
+  import system.executionContext
+
+  implicit val scheduler: Scheduler = system.scheduler
   val route: Route =
     (path("org" / Segment / "contributors") & get) { org =>
       cache(caching, cacheKey) {
-        withRequestTimeout(40 seconds) {
+        withRequestTimeout(timeout.seconds) {
           complete {
             getContributions(org) map {
               case Left(error) =>
@@ -49,7 +53,7 @@ import system.dispatcher
         }
       }
     }
-  private val registryActor = system.actorOf(Props[RankActor], "GithubRankActor")
+
   private val cacheKey: PartialFunction[RequestContext, Uri] = {
     case context: RequestContext if context.request.method == GET => context.request.uri
   }
@@ -57,5 +61,5 @@ import system.dispatcher
   private val caching = routeCache[Uri]
 
   private def getContributions(org: String): Future[Either[Error, Seq[Contributor]]] =
-    (registryActor ? GetContributions(org)).mapTo[Either[Error, Seq[Contributor]]]
+    system.ask(ref => GetContributionsTyped(org, ref)).mapTo[Either[Error, Seq[Contributor]]]
 }

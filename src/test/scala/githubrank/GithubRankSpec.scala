@@ -1,38 +1,44 @@
 package githubrank
 
-import akka.actor.{ActorSystem, Props}
-import akka.pattern.ask
-import akka.testkit.TestKit
+import java.io.File
+import java.util.concurrent.TimeUnit
+
+import akka.actor.testkit.typed.scaladsl.ActorTestKit
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 import org.scalatest.{AsyncWordSpecLike, BeforeAndAfterAll, Matchers}
 
-import scala.util
+import scala.concurrent.duration.Duration
 
-class GithubRankSpec extends TestKit(ActorSystem("GithubRankActorTest")) with AsyncWordSpecLike with Matchers with BeforeAndAfterAll{
-  override def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-  }
-  implicit val timeout: Timeout = Timeout.create(system.settings.config.getDuration("github-ranks.routes.ask-timeout"))
+class GithubRankSpec extends AsyncWordSpecLike with Matchers with BeforeAndAfterAll {
 
+  val testKit = ActorTestKit()
+  val testConf = ConfigFactory.parseFile(new File("src/test/resources/application.conf")).resolve()
 
-  "RankActor" must {
+  implicit val time: Timeout = Timeout(Duration(50L, TimeUnit.SECONDS))
+  val apiKey = testConf.getString("apiKey")
+
+  override def afterAll(): Unit = testKit.shutdownTestKit()
+
+  "RankActor" should {
     "Send back a valid and sorted list of contributors given a valid org in message 'GetContributions'" in {
-      val rankActor = system.actorOf(Props[RankActor], "GithubRankActor-1")
-      val contribsFuture = (rankActor ? GetContributions("aransiolaii")).mapTo[Either[Error, Seq[Contributor]]]
-
-      contribsFuture.map {
+      val probe = testKit.createTestProbe[Either[Error, Seq[GithubEntity]]]()
+      val rankActor = testKit.spawn(RankActor(apiKey))
+      val contribsFuture = rankActor ! GetContributionsTyped("aransiolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
+      val message = probe.expectMessageType[Either[Error, Seq[Contributor]]](Duration(50L, TimeUnit.SECONDS))
+      message match {
         case Right(value) =>
-          value.size shouldBe > (1)
+          value.size shouldBe >(1)
         case Left(value) =>
-          fail("none returned instead of a Seq[Contributor]")
+          fail("error returned instead of a Seq[Contributor]")
       }
     }
     "Send back an Error given an invalid org in message 'GetContributions'" in {
-      val rankActor = system.actorOf(Props[RankActor], "GithubRankActor-2")
-      val contribsFuture = (rankActor ? GetContributions("aransdszaii")).mapTo[Either[Error, Seq[Contributor]]]
-      contribsFuture.map { e =>
-          e.isLeft shouldEqual true
-      }
+      val probe = testKit.createTestProbe[Either[Error, Seq[GithubEntity]]]()
+      val rankActor = testKit.spawn(RankActor(apiKey))
+      val contribsFuture = rankActor ! GetContributionsTyped("aransolaii", probe.ref) //[Either[Error, Seq[Contributor]]]
+      val message = probe.expectMessageType[Either[Error, Seq[Contributor]]](Duration(50L, TimeUnit.SECONDS))
+      message.isLeft shouldEqual true
     }
   }
 }
