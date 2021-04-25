@@ -72,7 +72,7 @@ class HttpRequestClientSpec extends AsyncWordSpecLike with Matchers with BeforeA
     }
     ".makeRequest" should {
       "recursively get paginated pages given pagination information in each response headers" in {
-        val httpRequestClient = new HttpRequestClient(converter, "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", sys.log)
+        val httpRequestClient = new HttpRequestClient(converter, apiKey, sys.log)
         val req = RankActor.orgUri("SkylarkDoyle", 1)
         val src = httpRequestClient.makeRequest(Some(req))
         val resp = src.runWith(Sink.seq)
